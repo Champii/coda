@@ -16,9 +16,9 @@ let dispatch rpc query port =
           Rpc.Rpc.dispatch rpc conn query )
 
 (** Call an RPC, passing handlers for a successful call and a failing one. Note
-   that a successful *call* may have failed on the server side and returned a
-   failing result. To deal with that, the success handler returns an
-   Or_error. *)
+    that a successful *call* may have failed on the server side and returned a
+    failing result. To deal with that, the success handler returns an
+    Or_error. *)
 let dispatch_with_message rpc query port ~success ~error =
   let fail err = eprintf "%s\n" err ; exit 1 in
   match%bind dispatch rpc query port with
@@ -339,6 +339,67 @@ let user_command (body_args : User_command_payload.Body.t Command.Param.t)
                     (Receipt.Chain_hash.to_string receipt_chain_hash) ))
            ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
 
+(* Define new user_command without password input. *)
+let user_command_second
+    (body_args : User_command_payload.Body.t Command.Param.t) ~label ~summary
+    ~error =
+  let open Command.Param in
+  let open Cli_lib.Arg_type in
+  let amount_flag =
+    flag "fee" ~doc:"VALUE  fee you're willing to pay (default: 1)"
+      (optional txn_fee)
+  in
+  let password_flag =
+    flag "password" ~doc:"Password to the funded wallet" (required string)
+  in
+  let komodo_address_flag =
+    flag "komodo-address" ~doc:"STRING  Address to the komodo."
+      (required string)
+  in
+  let flag =
+    let open Command.Param in
+    return (fun a b c d e -> (a, b, c, d, e))
+    <*> body_args <*> Cli_lib.Flag.privkey_read_path <*> amount_flag
+    <*> password_flag <*> komodo_address_flag
+  in
+  Command.async ~summary
+    (Cli_lib.Background_daemon.init flag
+       ~f:(fun port (body, from_account, fee, password, komodo_address) ->
+         let open Deferred.Let_syntax in
+         let%bind sender_kp =
+           Secrets.Keypair.Terminal_stdin.read_exn_second ~path:from_account
+             ~password
+         in
+         let%bind nonce = get_nonce_exn sender_kp.public_key port in
+         let fee = Option.value ~default:(Currency.Fee.of_int 1) fee in
+         let memo1 = User_command_memo.create_exn komodo_address in
+         (* let memo2 = User_command_payload.memo_to_string memo1 in *)
+         (* let memo3 = User_command_payload.memo_of_string memo2 in *)
+         (* let memo = User_command_payload.memo_of_string komodo_address in *)
+         let payload : User_command.Payload.t =
+           User_command.Payload.create ~fee ~nonce ~memo:memo1 ~body
+         in
+         let payment = User_command.sign sender_kp payload in
+         dispatch_with_message Daemon_rpcs.Send_user_command.rpc
+           (payment :> User_command.t)
+           port
+           (* ~success:
+                                                            (Or_error.map ~f:(fun receipt_chain_hash ->
+                                                                sprintf
+                                                                  "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
+                                                                  label
+                                                                  (Receipt.Chain_hash.to_string receipt_chain_hash)
+                                                                  (User_command_payload.memo_to_string memo1)
+                                                                  memo2
+                                                                  (User_command_payload.memo_to_string memo3) )) *)
+           ~success:
+             (Or_error.map ~f:(fun receipt_chain_hash ->
+                  sprintf
+                    "Successfully enqueued %s in pool\nReceipt_chain_hash: %s"
+                    label
+                    (Receipt.Chain_hash.to_string receipt_chain_hash) ))
+           ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
+
 let send_payment =
   let body =
     let open Command.Let_syntax in
@@ -355,6 +416,50 @@ let send_payment =
   in
   user_command body ~label:"payment" ~summary:"Send payment to an address"
     ~error:"Failed to send payment"
+
+let burn =
+  let body =
+    let open Command.Let_syntax in
+    let open Cli_lib.Arg_type in
+    let%map_open amount =
+      flag "amount" ~doc:"VALUE Payment amount you want to burn"
+        (required txn_amount)
+      (* and wallet_password = flag "wallet-password" ~doc:"Password to the sender wallet."
+                                                       (required string) *)
+    in
+    let receiver =
+      Public_key.Compressed.of_base64_exn
+        "KFEj6lx+Q2Na/1ph/G58u4G9XiyDXLuj+/7XeBzbnFhYiOLDG6YCAAAA"
+    in
+    User_command_payload.Body.Payment {receiver; amount}
+  in
+  user_command_second body ~label:"burn" ~summary:"Burn specific amount"
+    ~error:"Failed to burn"
+
+let user_command_opp_burn (body_args : string Command.Param.t) ~label ~summary
+    ~error =
+  let open Command.Param in
+  let open Cli_lib.Arg_type in
+  Command.async ~summary
+    (Cli_lib.Background_daemon.init body_args ~f:(fun port txid ->
+         let open Deferred.Let_syntax in
+         dispatch_with_message Daemon_rpcs.Add_fund.rpc
+           (txid :> Add_fund.t)
+           port
+           ~success:(Or_error.map ~f:(fun res -> res))
+           ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
+
+let add_fund =
+  let body =
+    let open Command.Let_syntax in
+    let open Cli_lib.Arg_type in
+    let%map_open txid =
+      flag "txid" ~doc:"ID Komodo Transaction ID" (required string)
+    in
+    txid
+  in
+  user_command_opp_burn body ~label:"fund" ~summary:"Add fund to an address"
+    ~error:"Failed to add fund"
 
 let delegate_stake =
   let body =
@@ -550,4 +655,5 @@ let command =
     ; ("start-tracing", start_tracing)
     ; ("stop-tracing", stop_tracing)
     ; ("snark-job-list", snark_job_list)
+    ; ("add-fund", add_fund)
     ; ("visualization", Visualization.command_group) ]

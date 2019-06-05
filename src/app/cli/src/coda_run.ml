@@ -103,6 +103,7 @@ struct
       [ implement Daemon_rpcs.Send_user_command.rpc (fun () tx ->
             let%map result = Commands.send_payment logger coda tx in
             result |> Participating_state.active_exn )
+      ; implement Daemon_rpcs.Add_fund.rpc (fun () tx -> Commands.add_fund tx)
       ; implement Daemon_rpcs.Send_user_commands.rpc (fun () ts ->
             Commands.schedule_payments logger coda ts
             |> Participating_state.active_exn ;

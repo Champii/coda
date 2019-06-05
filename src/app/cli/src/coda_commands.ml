@@ -137,6 +137,40 @@ struct
     let%map account = get_account t addr in
     account.Account.Poly.balance
 
+  (* WORK ZONE *)
+
+  let send_komodo_rpc message =
+    let open Cohttp in
+    let open Cohttp_async in
+    let credentials =
+      `Basic
+        ( "user2092408878"
+        , "pass47438fa7ad18431ab4a2a2994983db08fcde31c32528fe6264423087e32de2e2fb"
+        )
+    in
+    let headers = Header.add_authorization (Header.init ()) credentials in
+    let data = Yojson.Basic.to_string message in
+    Client.post ~headers ~body:(Body.of_string data)
+      (Uri.of_string "http://192.168.1.26:8945/")
+    >>= fun (resp, body) -> body |> Body.to_string
+
+  (* '{"jsonrpc": "1.0", "id":"curltest", "method": "gettransaction", "params": ["2354602630a761fdb9a91f86ae3d675cbd66f5040fd80ee369d49168fb1a752f"] }' *)
+  let send_komodo_get_tx id =
+    let request =
+      `Assoc
+        [ ("jsonrpc", `String "1.0")
+        ; ("id", `String "tototata")
+        ; ("method", `String "gettransaction")
+        ; ("params", `List [`String id]) ]
+    in
+    send_komodo_rpc request
+
+  let add_fund (txn : Add_fund.t) =
+    let res = send_komodo_get_tx txn in
+    Deferred.map res ~f:(fun body -> Ok body)
+
+  (* /WORK ZONE *)
+
   module Receipt_chain_hash = struct
     (* Receipt.Chain_hash does not have bin_io *)
     include Receipt.Chain_hash.Stable.V1
