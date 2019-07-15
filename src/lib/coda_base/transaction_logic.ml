@@ -476,6 +476,7 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           }
     | Payment Payment_payload.Poly.{amount; receiver} ->
         (* TODO: Here check for the opp_burn transaction if it is one *)
+        (* match *)
         (* let%bind komodo_addr = Komodo.get_and_validate_tx in *)
         let%bind sender_balance' = sub_amount sender_account.balance amount in
         let undo emptys : Undo.User_command_undo.t =

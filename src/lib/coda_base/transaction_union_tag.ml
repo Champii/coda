@@ -3,7 +3,7 @@ open Fold_lib
 open Tuple_lib
 open Snark_params.Tick
 
-type t = BurnPayment | Payment | Stake_delegation | Fee_transfer | Coinbase
+type t = Payment | Stake_delegation | Fee_transfer | Coinbase
 [@@deriving enum, eq, sexp]
 
 let gen =
@@ -13,8 +13,6 @@ let gen =
 type var = Boolean.var * Boolean.var
 
 let to_bits = function
-  | BurnPayment ->
-      (false, false)
   | Payment ->
       (false, false)
   | Stake_delegation ->

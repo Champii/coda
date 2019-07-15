@@ -141,6 +141,23 @@ struct
 
   let add_fund (txn : Add_fund.t) = Komodo.get_and_validate_tx txn
 
+  (* let open Deferred.Let_syntax in
+     let%bind sender_kp =
+     Secrets.Keypair.Terminal_stdin.read_exn_second ~path:"./funded_wallet"
+      ~password:"CHANGE_ME"
+     in
+     let%bind nonce = get_nonce_exn sender_kp.public_key port in
+     let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
+     let memo1 = User_command_memo.create_exn txn in
+     let body = User_command_payload.Body.Payment {receiver; amount} in
+     let payload : User_command.Payload.t =
+     User_command.Payload.create ~fee ~nonce ~memo:memo1 ~body
+     in
+     let payment = User_command.sign sender_kp payload in *)
+  (* () *)
+
+  let get_komodo_tx (txn : Add_fund.t) = Komodo.get_and_validate_tx txn
+
   (* /WORK ZONE *)
 
   module Receipt_chain_hash = struct

@@ -384,14 +384,14 @@ let user_command_second
            (payment :> User_command.t)
            port
            (* ~success:
-                                                            (Or_error.map ~f:(fun receipt_chain_hash ->
-                                                                sprintf
-                                                                  "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
-                                                                  label
-                                                                  (Receipt.Chain_hash.to_string receipt_chain_hash)
-                                                                  (User_command_payload.memo_to_string memo1)
-                                                                  memo2
-                                                                  (User_command_payload.memo_to_string memo3) )) *)
+                                                                                    (Or_error.map ~f:(fun receipt_chain_hash ->
+                                                                                        sprintf
+                                                                                          "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
+                                                                                          label
+                                                                                          (Receipt.Chain_hash.to_string receipt_chain_hash)
+                                                                                          (User_command_payload.memo_to_string memo1)
+                                                                                          memo2
+                                                                                          (User_command_payload.memo_to_string memo3) )) *)
            ~success:
              (Or_error.map ~f:(fun receipt_chain_hash ->
                   sprintf
@@ -425,8 +425,9 @@ let burn =
       flag "amount" ~doc:"VALUE Payment amount you want to burn"
         (required txn_amount)
       (* and wallet_password = flag "wallet-password" ~doc:"Password to the sender wallet."
-                                                       (required string) *)
+                                                                               (required string) *)
     in
+    (* TODO: Use config system to store this *)
     let receiver =
       Public_key.Compressed.of_base64_exn
         "KFEj6lx+Q2Na/1ph/G58u4G9XiyDXLuj+/7XeBzbnFhYiOLDG6YCAAAA"
@@ -442,11 +443,24 @@ let user_command_opp_burn (body_args : string Command.Param.t) ~label ~summary
   let open Cli_lib.Arg_type in
   Command.async ~summary
     (Cli_lib.Background_daemon.init body_args ~f:(fun port txid ->
-         let open Deferred.Let_syntax in
+         (* let open Deferred.Let_syntax in *)
+         (* let%bind sender_kp =
+            Secrets.Keypair.Terminal_stdin.read_exn_second
+             ~path:"./funded_wallet" ~password:"CHANGE_ME"
+            in
+            let%bind nonce = get_nonce_exn sender_kp.public_key port in
+            let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
+            let memo1 = User_command_memo.create_exn txid in
+            let payload : User_command.Payload.t =
+            User_command.Payload.create ~fee ~nonce ~memo:memo1 ~body
+            in
+            let payment = User_command.sign sender_kp payload in *)
          dispatch_with_message Daemon_rpcs.Add_fund.rpc
            (txid :> Add_fund.t)
            port
-           ~success:(Or_error.map ~f:(fun res -> res))
+           ~success:
+             (Or_error.map ~f:(fun (amount, addr) ->
+                  string_of_float amount ^ addr ))
            ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
 
 let add_fund =
@@ -460,6 +474,33 @@ let add_fund =
   in
   user_command_opp_burn body ~label:"fund" ~summary:"Add fund to an address"
     ~error:"Failed to add fund"
+
+let get_komodo_tx_exec (txid : string Command.Param.t) ~label ~summary ~error =
+  let open Command.Param in
+  let open Cli_lib.Arg_type in
+  Command.async ~summary
+    (Cli_lib.Background_daemon.init txid ~f:(fun port txid ->
+         let open Deferred.Let_syntax in
+         dispatch_with_message Daemon_rpcs.Get_komodo_tx.rpc
+           (txid :> Add_fund.t)
+           port
+           ~success:
+             (Or_error.map ~f:(fun (amount, addr) ->
+                  string_of_float amount ^ addr ))
+           ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
+
+let get_komodo_tx =
+  let body =
+    let open Command.Let_syntax in
+    let open Cli_lib.Arg_type in
+    let%map_open txid =
+      flag "txid" ~doc:"ID Komodo Transaction ID" (required string)
+    in
+    txid
+  in
+  get_komodo_tx_exec body ~label:"fund"
+    ~summary:"Get and validate komodo transaction"
+    ~error:"Failed to get or validate transaction"
 
 let delegate_stake =
   let body =
@@ -656,4 +697,5 @@ let command =
     ; ("stop-tracing", stop_tracing)
     ; ("snark-job-list", snark_job_list)
     ; ("add-fund", add_fund)
+    ; ("get-komodo-tx", get_komodo_tx)
     ; ("visualization", Visualization.command_group) ]

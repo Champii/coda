@@ -273,10 +273,21 @@ module Types = struct
   end
 end
 
+module Get_komodo_tx = struct
+  type query = Add_fund.Stable.Latest.t [@@deriving bin_io]
+
+  type response = (float * string) Or_error.t [@@deriving bin_io]
+
+  type error = unit [@@deriving bin_io]
+
+  let rpc : (query, response) Rpc.Rpc.t =
+    Rpc.Rpc.create ~name:"Get_komodo_tx" ~version:0 ~bin_query ~bin_response
+end
+
 module Add_fund = struct
   type query = Add_fund.Stable.Latest.t [@@deriving bin_io]
 
-  type response = string Or_error.t [@@deriving bin_io]
+  type response = (float * string) Or_error.t [@@deriving bin_io]
 
   type error = unit [@@deriving bin_io]
 

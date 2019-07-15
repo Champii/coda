@@ -107,7 +107,6 @@ module Body = struct
       module T = struct
         type t =
           | Payment of Payment_payload.Stable.V1.t
-          | BurnPayment of Payment_burn_payload.Stable.V1.t
           | Stake_delegation of Stake_delegation.Stable.V1.t
         [@@deriving bin_io, eq, sexp, hash, yojson, version]
       end
@@ -131,7 +130,6 @@ module Body = struct
   (* bin_io omitted *)
   type t = Stable.Latest.t =
     | Payment of Payment_payload.Stable.V1.t
-    | BurnPayment of Payment_burn_payload.Stable.V1.t
     | Stake_delegation of Stake_delegation.Stable.V1.t
   [@@deriving eq, sexp, hash, yojson]
 
@@ -142,8 +140,6 @@ module Body = struct
   module Tag = Transaction_union_tag
 
   let fold = function
-    | BurnPayment p ->
-        Fold.(Tag.fold BurnPayment +> Payment_burn_payload.fold p)
     | Payment p ->
         Fold.(Tag.fold Payment +> Payment_payload.fold p)
     | Stake_delegation d ->
@@ -153,8 +149,6 @@ module Body = struct
                ~f:(fun _ -> (false, false, false)))
 
   let sender_cost = function
-    | BurnPayment {amount; _} ->
-        amount
     | Payment {amount; _} ->
         amount
     | Stake_delegation _ ->
