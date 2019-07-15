@@ -32,6 +32,10 @@ let get_raw_tx id =
   send_rpc request
 
 let get_amount_address tx =
+  (*TODO: extract that from some future field in tx*)
+  let coda_dest_addr =
+    "AShMU6Qe0gQxi8Z9ki0IjdyO9cVlkY4zeKtJOKkO+YjfxUfYIi/IAQAAAQ=="
+  in
   let open Yojson.Basic.Util in
   let vout0_option =
     List.hd (tx |> member "result" |> member "vout" |> to_list)
@@ -42,7 +46,7 @@ let get_amount_address tx =
         (Error.of_string
            "Error: Malformed json answer: No vout field in transaction")
   | Some vout0 -> (
-      let amount = vout0 |> member "value" |> to_float in
+      let amount = vout0 |> member "valueSat" |> to_int in
       let address_option =
         List.hd
           ( vout0 |> member "scriptPubKey" |> member "addresses" |> to_list
@@ -53,12 +57,13 @@ let get_amount_address tx =
           Error
             (Error.of_string
                "Error: Malformed json answer: No vout address in transaction")
-      | Some addr ->
-          Ok (amount, addr) )
+      | Some addr_to ->
+          Ok (amount, addr_to, coda_dest_addr) )
 
 let validate_burn_addr tx =
-  Result.bind (get_amount_address tx) ~f:(fun (amount, addr) ->
-      if addr = komodo_burn_addr then Ok (amount, addr)
+  Result.bind (get_amount_address tx)
+    ~f:(fun (amount, addr_to, coda_dest_addr) ->
+      if addr_to = komodo_burn_addr then Ok (amount, addr_to, coda_dest_addr)
       else
         Error
           (Error.of_string
