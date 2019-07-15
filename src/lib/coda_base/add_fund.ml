@@ -28,7 +28,8 @@ end
 module Stable = struct
   module V1 = struct
     module T = struct
-      type t = string [@@deriving bin_io, eq, sexp, hash, yojson, version]
+      type t = string
+      [@@deriving bin_io, compare, eq, sexp, hash, yojson, version]
     end
 
     include T
@@ -47,6 +48,6 @@ module Stable = struct
   module Registered_V1 = Registrar.Register (V1)
 end
 
-type t = Stable.Latest.t [@@deriving sexp, yojson, hash]
+type t = Stable.Latest.t [@@deriving eq, sexp, hash, yojson]
 
 type value = t
