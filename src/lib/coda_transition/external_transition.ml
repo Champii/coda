@@ -81,10 +81,12 @@ module Make
     module Registered_V1 = Registrar.Register (V1)
   end
 
-  open Stable.Latest
-
   (* bin_io omitted *)
-  type t = Stable.Latest.t [@@deriving sexp]
+  type t = Stable.Latest.t =
+    { protocol_state: Protocol_state.Value.Stable.V1.t
+    ; protocol_state_proof: Proof.Stable.V1.t sexp_opaque
+    ; staged_ledger_diff: Staged_ledger_diff.t }
+  [@@deriving sexp]
 
   type external_transition = t
 
@@ -432,7 +434,7 @@ module Make
               ~f:target_hash_of_ledger_proof
               ~default:
                 (Frozen_ledger_hash.of_ledger_hash
-                   (Ledger.merkle_root Genesis_ledger.t))
+                   (Ledger.merkle_root (Lazy.force Genesis_ledger.t)))
         | Some (proof, _) ->
             target_hash_of_ledger_proof proof
       in

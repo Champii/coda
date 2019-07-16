@@ -3,9 +3,9 @@ open Coda_base
 open Signature_lib
 open Currency
 
-let pk = Public_key.Compressed.of_base64_exn
+let pk = Public_key.Compressed.of_base58_check_exn
 
-let sk = Private_key.of_base64_exn
+let sk = Private_key.of_base58_check_exn
 
 module type Base_intf = sig
   val accounts : (Private_key.t option * Account.t) list
@@ -14,11 +14,13 @@ end
 module Make_from_base (Base : Base_intf) : Intf.S = struct
   include Base
 
+  (* TODO: #1488 compute this at compile time instead of lazily *)
   let t =
-    let ledger = Ledger.create_ephemeral () in
-    List.iter accounts ~f:(fun (_, account) ->
-        Ledger.create_new_account_exn ledger account.public_key account ) ;
-    ledger
+    lazy
+      (let ledger = Ledger.create_ephemeral () in
+       List.iter accounts ~f:(fun (_, account) ->
+           Ledger.create_new_account_exn ledger account.public_key account ) ;
+       ledger)
 
   let find_account_record_exn ~f =
     List.find_exn accounts ~f:(fun (_, account) -> f account)
