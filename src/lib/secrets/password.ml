@@ -38,3 +38,7 @@ let hidden_line_or_env prompt ~env : Bytes.t Async.Deferred.Or_error.t =
       lift (read_hidden_line prompt)
 
 let read prompt = hidden_line_or_env prompt ~env:"CODA_PRIVKEY_PASS"
+
+let read_no_prompt password =
+  let open Async.Deferred.Or_error.Let_syntax in
+  return (Bytes.of_string password)

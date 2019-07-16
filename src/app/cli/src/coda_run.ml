@@ -108,6 +108,9 @@ let setup_local_server ?(client_whitelist = []) ?rest_server_port ~coda
           Coda_commands.schedule_user_commands coda ts
           |> Participating_state.active_exn ;
           Deferred.unit )
+      ; implement Daemon_rpcs.Add_fund.rpc (fun () tx -> Commands.add_fund tx)
+      ; implement Daemon_rpcs.Get_komodo_tx.rpc (fun () tx ->
+            Commands.get_komodo_tx tx )
     ; implement Daemon_rpcs.Get_balance.rpc (fun () pk ->
           return
             ( Coda_commands.get_balance coda pk

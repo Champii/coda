@@ -437,8 +437,8 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
   end
 
   (* someday: It would probably be better if we didn't modify the receipt chain hash
-  in the case that the sender is equal to the receiver, but it complicates the SNARK, so
-  we don't for now. *)
+     in the case that the sender is equal to the receiver, but it complicates the SNARK, so
+     we don't for now. *)
   let apply_user_command_unchecked ledger
       ({payload; sender; signature= _} as user_command : User_command.t) =
     let sender = Public_key.compress sender in
@@ -472,6 +472,9 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           ; body= Stake_delegation {previous_delegate= sender_account.delegate}
           }
     | Payment Payment_payload.Poly.{amount; receiver} ->
+        (* TODO: Here check for the opp_burn transaction if it is one *)
+        (* match *)
+        (* let%bind komodo_addr = Komodo.get_and_validate_tx in *)
         let%bind sender_balance' = sub_amount sender_account.balance amount in
         let undo emptys : Undo.User_command_undo.t =
           {common; body= Payment {previous_empty_accounts= emptys}}
@@ -577,7 +580,7 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
       {coinbase= cb; previous_empty_accounts= emptys1 @ emptys2}
 
   (* Don't have to be atomic here because these should never fail. In fact, none of
-  the undo functions should ever return an error. This should be fixed in the types. *)
+     the undo functions should ever return an error. This should be fixed in the types. *)
   let undo_coinbase t
       Undo.Coinbase_undo.
         { coinbase= {proposer; fee_transfer; amount= coinbase_amount}
