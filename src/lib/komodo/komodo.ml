@@ -3,7 +3,8 @@ open Async
 open Coda_base
 
 (* TODO: use coda config system to store this *)
-let daemon_addr_ = "http://192.168.1.26:8945/"
+(* let daemon_addr_ = "http://192.168.1.26:8945/" *)
+let daemon_addr_ = "http://192.168.43.6:8945/"
 
 let komodo_burn_addr = "RHRkomCUgeYVQtSVoCQXgKjkjrnDvFaeAM"
 
@@ -37,8 +38,17 @@ let get_amount_address tx =
     "AShMU6Qe0gQxi8Z9ki0IjdyO9cVlkY4zeKtJOKkO+YjfxUfYIi/IAQAAAQ=="
   in
   let open Yojson.Basic.Util in
+  let get_addrs_predicate x =
+    let addrs =
+      x |> member "scriptPubKey" |> member "addresses" |> to_list
+      |> filter_string
+    in
+    let found = List.find ~f:(fun y -> y = komodo_burn_addr) addrs in
+    match found with Some _ -> true | _ -> false
+  in
   let vout0_option =
-    List.hd (tx |> member "result" |> member "vout" |> to_list)
+    List.find ~f:get_addrs_predicate
+      (tx |> member "result" |> member "vout" |> to_list)
   in
   match vout0_option with
   | None ->

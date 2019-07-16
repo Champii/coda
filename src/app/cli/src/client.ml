@@ -384,14 +384,14 @@ let user_command_second
            (payment :> User_command.t)
            port
            (* ~success:
-                                                                                                                                                (Or_error.map ~f:(fun receipt_chain_hash ->
-                                                                                                                                                    sprintf
-                                                                                                                                                      "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
-                                                                                                                                                      label
-                                                                                                                                                      (Receipt.Chain_hash.to_string receipt_chain_hash)
-                                                                                                                                                      (User_command_payload.memo_to_string memo1)
-                                                                                                                                                      memo2
-                                                                                                                                                      (User_command_payload.memo_to_string memo3) )) *)
+                                                                                                                                                  (Or_error.map ~f:(fun receipt_chain_hash ->
+                                                                                                                                                      sprintf
+                                                                                                                                                        "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
+                                                                                                                                                        label
+                                                                                                                                                        (Receipt.Chain_hash.to_string receipt_chain_hash)
+                                                                                                                                                        (User_command_payload.memo_to_string memo1)
+                                                                                                                                                        memo2
+                                                                                                                                                        (User_command_payload.memo_to_string memo3) )) *)
            ~success:
              (Or_error.map ~f:(fun receipt_chain_hash ->
                   sprintf
@@ -425,7 +425,7 @@ let burn =
       flag "amount" ~doc:"VALUE Payment amount you want to burn"
         (required txn_amount)
       (* and wallet_password = flag "wallet-password" ~doc:"Password to the sender wallet."
-                                                                                                                                           (required string) *)
+                                                                                                                                             (required string) *)
     in
     (* TODO: Use config system to store this *)
     let receiver =
@@ -513,7 +513,8 @@ let get_komodo_tx_exec (txid : string Command.Param.t) ~label ~summary ~error =
            port
            ~success:
              (Or_error.map ~f:(fun (amount, addr_to, coda_dest_addr) ->
-                  string_of_int amount ^ addr_to ^ coda_dest_addr ))
+                  string_of_int amount ^ "\n" ^ addr_to ^ "\n" ^ coda_dest_addr
+              ))
            ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
 
 let get_komodo_tx =
