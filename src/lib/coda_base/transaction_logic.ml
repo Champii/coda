@@ -436,6 +436,38 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           Ok (Coinbase c.coinbase)
   end
 
+  let coda_burn_public_addr =
+    Public_key.Compressed.of_base58_check_exn
+      "8QnLSw9fmjRnjsQAy47HfXUuM2vp4CVBXcbguPoqpvfXw42e6zuXgpCSajbPr3V8wc"
+
+  let validate_opp_burn sender payload amount receiver =
+    if sender = coda_burn_public_addr then (
+      let memo = User_command.Payload.memo payload in
+      let tx =
+        Komodo.get_and_validate_tx_sync (User_command_memo.to_string memo)
+      in
+      let coda_amount_int = Amount.to_int amount in
+      let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
+      match tx with
+      | Ok (amount', receiver') ->
+          printf "Got valid komodo tx !!!! %d %s" amount' receiver' ;
+          if coda_amount_int <> amount' then
+            Error
+              ( Error.of_string
+              @@ sprintf "OPP_BURN: Invalid tx amount (coda: %d != komodo: %d)"
+                   coda_amount_int amount' )
+          else if coda_receiver_str <> receiver' then
+            Error
+              ( Error.of_string
+              @@ sprintf
+                   "OPP_BURN: Invalid tx receiver (coda: %s != komodo: %s)"
+                   coda_receiver_str receiver' )
+          else Ok ()
+      | Error _ ->
+          printf "Error validating komodo tx !!!!" ;
+          Error (Error.of_string "OPP_BURN: Cannot get the komodo tx") )
+    else Ok ()
+
   (* someday: It would probably be better if we didn't modify the receipt chain hash
      in the case that the sender is equal to the receiver, but it complicates the SNARK, so
      we don't for now. *)
@@ -472,9 +504,7 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           ; body= Stake_delegation {previous_delegate= sender_account.delegate}
           }
     | Payment Payment_payload.Poly.{amount; receiver} ->
-        (* TODO: Here check for the opp_burn transaction if it is one *)
-        (* match *)
-        (* let%bind komodo_addr = Komodo.get_and_validate_tx in *)
+        let%bind () = validate_opp_burn sender payload amount receiver in
         let%bind sender_balance' = sub_amount sender_account.balance amount in
         let undo emptys : Undo.User_command_undo.t =
           {common; body= Payment {previous_empty_accounts= emptys}}

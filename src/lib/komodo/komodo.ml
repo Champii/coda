@@ -1,10 +1,8 @@
 open Core
 open Async
-open Coda_base
 
 (* TODO: use coda config system to store this *)
-(* let daemon_addr_ = "http://192.168.1.26:8945/" *)
-let daemon_addr_ = "http://192.168.43.6:8945/"
+let daemon_addr_ = "http://192.168.1.26:8945/"
 
 let komodo_burn_addr = "RHRkomCUgeYVQtSVoCQXgKjkjrnDvFaeAM"
 
@@ -32,36 +30,39 @@ let get_raw_tx id =
   in
   send_rpc request
 
+let get_vout_list rawtx =
+  let open Yojson.Basic.Util in
+  rawtx |> member "result" |> member "vout" |> to_list
+
+let get_vout_addr_list vout =
+  let open Yojson.Basic.Util in
+  vout |> member "scriptPubKey" |> member "addresses" |> to_list
+  |> filter_string
+
+let get_vout_amount vout =
+  let open Yojson.Basic.Util in
+  vout |> member "valueSat" |> to_int
+
+let find_addr_predicate vout =
+  let addrs = get_vout_addr_list vout in
+  let found = List.find ~f:(fun y -> y = komodo_burn_addr) addrs in
+  match found with Some _ -> true | _ -> false
+
 let get_amount_address tx =
   (*TODO: extract that from some future field in tx*)
   let coda_dest_addr =
-    "AShMU6Qe0gQxi8Z9ki0IjdyO9cVlkY4zeKtJOKkO+YjfxUfYIi/IAQAAAQ=="
+    "8QnLWmoTWZ9n2RwsiBTsNyGk8DZoSdgXbJmrsdZRZFLDHSyEamzZzNbHGUj4466zUg"
   in
-  let open Yojson.Basic.Util in
-  let get_addrs_predicate x =
-    let addrs =
-      x |> member "scriptPubKey" |> member "addresses" |> to_list
-      |> filter_string
-    in
-    let found = List.find ~f:(fun y -> y = komodo_burn_addr) addrs in
-    match found with Some _ -> true | _ -> false
-  in
-  let vout0_option =
-    List.find ~f:get_addrs_predicate
-      (tx |> member "result" |> member "vout" |> to_list)
-  in
-  match vout0_option with
+  let vouts = get_vout_list tx in
+  let vout = List.find ~f:find_addr_predicate vouts in
+  match vout with
   | None ->
       Error
         (Error.of_string
            "Error: Malformed json answer: No vout field in transaction")
   | Some vout0 -> (
-      let amount = vout0 |> member "valueSat" |> to_int in
-      let address_option =
-        List.hd
-          ( vout0 |> member "scriptPubKey" |> member "addresses" |> to_list
-          |> filter_string )
-      in
+      let amount = get_vout_amount vout0 in
+      let address_option = List.hd (get_vout_addr_list vout0) in
       match address_option with
       | None ->
           Error
@@ -73,13 +74,13 @@ let get_amount_address tx =
 let validate_burn_addr tx =
   Result.bind (get_amount_address tx)
     ~f:(fun (amount, addr_to, coda_dest_addr) ->
-      if addr_to = komodo_burn_addr then Ok (amount, addr_to, coda_dest_addr)
+      if addr_to = komodo_burn_addr then Ok (amount, coda_dest_addr)
       else
         Error
           (Error.of_string
              "Error: Transaction receiver is not the burn address") )
 
-(* TODO: Check tx depth *)
+(* TODO: Check komodo tx depth and coda dest addr validity *)
 let validate_tx tx_str =
   let open Yojson.Basic.Util in
   let tx = Yojson.Basic.from_string tx_str in
@@ -91,6 +92,11 @@ let validate_tx tx_str =
          ^ (error |> member "message" |> to_string) ))
   else validate_burn_addr tx
 
-let get_and_validate_tx (txn : Add_fund.t) =
+let get_and_validate_tx (txn : string) =
   let tx_str = get_raw_tx txn in
   Deferred.map tx_str ~f:validate_tx
+
+let get_and_validate_tx_sync (txn : string) =
+  Thread_safe.block_on_async_exn (fun () ->
+      let%bind res = get_and_validate_tx txn in
+      return res )

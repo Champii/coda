@@ -274,7 +274,7 @@ end
 module Get_komodo_tx = struct
   type query = Add_fund.Stable.Latest.t [@@deriving bin_io]
 
-  type response = (int * string * string) Or_error.t [@@deriving bin_io]
+  type response = (int * string) Or_error.t [@@deriving bin_io]
 
   type error = unit [@@deriving bin_io]
 
@@ -285,7 +285,7 @@ end
 module Add_fund = struct
   type query = Add_fund.Stable.Latest.t [@@deriving bin_io]
 
-  type response = (int * string * string) Or_error.t [@@deriving bin_io]
+  type response = (int * string) Or_error.t [@@deriving bin_io]
 
   type error = unit [@@deriving bin_io]
 

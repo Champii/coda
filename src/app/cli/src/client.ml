@@ -483,7 +483,7 @@ let user_command_second
          in
          let%bind nonce = get_nonce_exn sender_kp.public_key port in
          let fee = Option.value ~default:(Currency.Fee.of_int 1) fee in
-         let memo1 = User_command_memo.create_exn komodo_address in
+         let memo1 = User_command_memo.create_from_string_exn komodo_address in
          (* let memo2 = User_command_payload.memo_to_string memo1 in *)
          (* let memo3 = User_command_payload.memo_of_string memo2 in *)
          (* let memo = User_command_payload.memo_of_string komodo_address in *)
@@ -495,14 +495,14 @@ let user_command_second
            (payment :> User_command.t)
            port
            (* ~success:
-                                                                                                                                                  (Or_error.map ~f:(fun receipt_chain_hash ->
-                                                                                                                                                      sprintf
-                                                                                                                                                        "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
-                                                                                                                                                        label
-                                                                                                                                                        (Receipt.Chain_hash.to_string receipt_chain_hash)
-                                                                                                                                                        (User_command_payload.memo_to_string memo1)
-                                                                                                                                                        memo2
-                                                                                                                                                        (User_command_payload.memo_to_string memo3) )) *)
+                                                                                                                                                                          (Or_error.map ~f:(fun receipt_chain_hash ->
+                                                                                                                                                                              sprintf
+                                                                                                                                                                                "Successfully enqueued %s in pool\nReceipt_chain_hash: %s\nKomodo Address Hash memo1: %s\nKomodo Address Hash memo2: %s\nKomodo Address Hash memo3: %s"
+                                                                                                                                                                                label
+                                                                                                                                                                                (Receipt.Chain_hash.to_string receipt_chain_hash)
+                                                                                                                                                                                (User_command_payload.memo_to_string memo1)
+                                                                                                                                                                                memo2
+                                                                                                                                                                                (User_command_payload.memo_to_string memo3) )) *)
            ~success:
              (Or_error.map ~f:(fun receipt_chain_hash ->
                   sprintf
@@ -536,12 +536,12 @@ let burn =
       flag "amount" ~doc:"VALUE Payment amount you want to burn"
         (required txn_amount)
       (* and wallet_password = flag "wallet-password" ~doc:"Password to the sender wallet."
-                                                                                                                                             (required string) *)
+                                                                                                                                                                     (required string) *)
     in
     (* TODO: Use config system to store this *)
     let receiver =
-      Public_key.Compressed.of_base64_exn
-        "KFEj6lx+Q2Na/1ph/G58u4G9XiyDXLuj+/7XeBzbnFhYiOLDG6YCAAAA"
+      Public_key.Compressed.of_base58_check_exn
+        "8QnLSw9fmjRnjsQAy47HfXUuM2vp4CVBXcbguPoqpvfXw42e6zuXgpCSajbPr3V8wc"
     in
     User_command_payload.Body.Payment {receiver; amount}
   in
@@ -553,8 +553,8 @@ let internal_get_komodo_tx port txid =
   match%map
     dispatch Daemon_rpcs.Get_komodo_tx.rpc (txid :> Add_fund.t) port
   with
-  | Ok (Ok (amount, addr_to, coda_dest_addr)) ->
-      Ok (amount, addr_to, coda_dest_addr)
+  | Ok (Ok (amount, coda_dest_addr)) ->
+      Ok (amount, coda_dest_addr)
   | Ok (Error e) ->
       Error (Error.to_string_hum e)
   | Error e ->
@@ -562,8 +562,6 @@ let internal_get_komodo_tx port txid =
 
 let user_command_opp_burn (body_args : string Command.Param.t) ~label ~summary
     ~error =
-  let open Command.Param in
-  let open Cli_lib.Arg_type in
   Command.async ~summary
     (Cli_lib.Background_daemon.init body_args ~f:(fun port txid ->
          let open Deferred.Let_syntax in
@@ -571,9 +569,9 @@ let user_command_opp_burn (body_args : string Command.Param.t) ~label ~summary
          match komodo_res with
          | Error e ->
              printf "%s: %s" error e ; Deferred.unit
-         | Ok (amount', addr_to, coda_dest_addr) ->
+         | Ok (amount', coda_dest_addr) ->
              let receiver =
-               Public_key.Compressed.of_base64_exn coda_dest_addr
+               Public_key.Compressed.of_base58_check_exn coda_dest_addr
              in
              let amount = Currency.Amount.of_int amount' in
              let sender_kp = Genesis_ledger.largest_account_keypair_exn () in
@@ -583,7 +581,7 @@ let user_command_opp_burn (body_args : string Command.Param.t) ~label ~summary
               in *)
              let%bind nonce = get_nonce_exn sender_kp.public_key port in
              let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
-             let memo1 = User_command_memo.create_exn txid in
+             let memo1 = User_command_memo.create_from_string_exn txid in
              let body = User_command_payload.Body.Payment {receiver; amount} in
              let payload : User_command.Payload.t =
                User_command.Payload.create ~fee ~nonce ~memo:memo1 ~body
@@ -604,7 +602,6 @@ let user_command_opp_burn (body_args : string Command.Param.t) ~label ~summary
 let add_fund =
   let body =
     let open Command.Let_syntax in
-    let open Cli_lib.Arg_type in
     let%map_open txid =
       flag "txid" ~doc:"ID Komodo Transaction ID" (required string)
     in
@@ -614,30 +611,26 @@ let add_fund =
     ~error:"Failed to add fund"
 
 let get_komodo_tx_exec (txid : string Command.Param.t) ~label ~summary ~error =
-  let open Command.Param in
-  let open Cli_lib.Arg_type in
   Command.async ~summary
     (Cli_lib.Background_daemon.init txid ~f:(fun port txid ->
-         let open Deferred.Let_syntax in
          dispatch_with_message Daemon_rpcs.Get_komodo_tx.rpc
            (txid :> Add_fund.t)
            port
            ~success:
-             (Or_error.map ~f:(fun (amount, addr_to, coda_dest_addr) ->
-                  string_of_int amount ^ "\n" ^ addr_to ^ "\n" ^ coda_dest_addr
-              ))
+             (Or_error.map ~f:(fun (amount, coda_dest_addr) ->
+                  "Initiated " ^ label ^ "\nAmount: " ^ string_of_int amount
+                  ^ "\nReceiver: " ^ coda_dest_addr ))
            ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
 
 let get_komodo_tx =
   let body =
     let open Command.Let_syntax in
-    let open Cli_lib.Arg_type in
     let%map_open txid =
       flag "txid" ~doc:"ID Komodo Transaction ID" (required string)
     in
     txid
   in
-  get_komodo_tx_exec body ~label:"fund"
+  get_komodo_tx_exec body ~label:"Get komodo tx"
     ~summary:"Get and validate komodo transaction"
     ~error:"Failed to get or validate transaction"
 
@@ -836,7 +829,9 @@ end
 let command =
   Command.group ~summary:"Lightweight client commands"
     ~preserve_subcommand_order:()
-    [ ("get-balance", get_balance)
+    [ ("add-fund", add_fund)
+    ; ("get-komodo-tx", get_komodo_tx)
+    ; ("get-balance", get_balance)
     ; ("send-payment", send_payment)
     ; ("generate-keypair", generate_keypair)
     ; ("delegate-stake", delegate_stake)

@@ -175,7 +175,7 @@ module Compressed = struct
   let fold t = Fold.group3 ~default:false (fold_bits t)
 
   (* TODO: Right now everyone could switch to using the other unpacking...
-   Either decide this is ok or assert bitstring lt field size *)
+     Either decide this is ok or assert bitstring lt field size *)
   let var_to_triples ({x; is_odd} : var) =
     let%map x_bits =
       Field.Checked.choose_preimage_var x ~length:Field.size_in_bits
