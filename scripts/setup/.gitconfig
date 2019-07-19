@@ -1,0 +1,33 @@
+[core]
+        repositoryformatversion = 0
+        filemode = true
+        bare = false
+        logallrefupdates = true
+[remote "origin"]
+        url = https://github.com/CodaProtocol/coda.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "master"]
+        remote = origin
+        merge = refs/heads/master
+[submodule "frontend/wallet/tablecloth"]
+        active = true
+        url = https://github.com/bkase/tablecloth
+[submodule "src/external/async_kernel"]
+        active = true
+        url = https://github.com/CodaProtocol/async_kernel
+[submodule "src/external/digestif"]
+        active = true
+        url = https://github.com/CodaProtocol/digestif.git
+[submodule "src/external/ocaml-extlib"]
+        active = true
+        url = https://github.com/CodaProtocol/ocaml-extlib.git
+[submodule "src/external/ppx_optcomp"]
+        active = true
+        url = https://github.com/CodaProtocol/ppx_optcomp
+[submodule "src/external/rpc_parallel"]
+        active = true
+        url = https://github.com/CodaProtocol/rpc_parallel.git
+[submodule "src/lib/snarky"]
+        active = true
+        url = https://github.com/o1-labs/snarky
+
