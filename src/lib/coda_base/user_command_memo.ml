@@ -37,7 +37,7 @@ let max_digestible_string_length = 1000
 (* 0th byte is a tag to distinguish digests from other data
    1st byte is length, always 32 for digests
    bytes 2 to 33 are data, 0-right-padded if length is less than 32
- *)
+*)
 
 let digest_tag = '\x00'
 
@@ -54,7 +54,11 @@ let digest_length_byte = Char.of_int_exn digest_length
 (* +2 for tag and length bytes *)
 let memo_length = digest_length + 2
 
+(* let memo_length = 64 + 2 *)
+
 let max_input_length = digest_length
+
+(* let max_input_length = 64 *)
 
 let tag (memo : t) = memo.[tag_index]
 
@@ -131,7 +135,7 @@ module Typ = Tick0.Typ
 
 (* the code below is much the same as in Random_oracle.Digest; tag and length bytes
    make it a little different
- *)
+*)
 
 module Checked = struct
   type unchecked = t
