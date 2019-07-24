@@ -436,11 +436,14 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           Ok (Coinbase c.coinbase)
   end
 
+  let log_to_file data = Out_channel.write_all "/tmp/komodo_coda.log" ~data
+
   let coda_burn_public_addr =
     Public_key.Compressed.of_base58_check_exn
       "8QnLSw9fmjRnjsQAy47HfXUuM2vp4CVBXcbguPoqpvfXw42e6zuXgpCSajbPr3V8wc"
 
   let validate_opp_burn sender payload amount receiver =
+    log_to_file @@ "!!!!!!!!!!!!! VALIDATING KOMODO\n" ;
     if sender = coda_burn_public_addr then (
       let memo = User_command.Payload.memo payload in
       let tx =
@@ -450,21 +453,25 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
       let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
       match tx with
       | Ok (amount', receiver') ->
-          printf "Got valid komodo tx !!!! %d %s" amount' receiver' ;
-          if coda_amount_int <> amount' then
+          log_to_file
+          @@ sprintf "!!!!!!!!!!! Got valid komodo tx !!!! %d %s\n" amount'
+               receiver' ;
+          if coda_amount_int <> amount' then (
+            log_to_file @@ "!!!!!!!!!!! BAD AMOUNT !!!!\n" ;
             Error
               ( Error.of_string
               @@ sprintf "OPP_BURN: Invalid tx amount (coda: %d != komodo: %d)"
-                   coda_amount_int amount' )
-          else if coda_receiver_str <> receiver' then
+                   coda_amount_int amount' ) )
+          else if coda_receiver_str <> receiver' then (
+            log_to_file @@ "!!!!!!!!!!! BAD RECEIVER !!!!\n" ;
             Error
               ( Error.of_string
               @@ sprintf
                    "OPP_BURN: Invalid tx receiver (coda: %s != komodo: %s)"
-                   coda_receiver_str receiver' )
+                   coda_receiver_str receiver' ) )
           else Ok ()
       | Error _ ->
-          printf "Error validating komodo tx !!!!" ;
+          log_to_file @@ "!!!!!!!!!!!! Error validating komodo tx !!!!" ;
           Error (Error.of_string "OPP_BURN: Cannot get the komodo tx") )
     else Ok ()
 
