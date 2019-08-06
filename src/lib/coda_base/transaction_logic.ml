@@ -436,19 +436,25 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           Ok (Coinbase c.coinbase)
   end
 
-  let log_to_file data = Out_channel.write_all "/tmp/komodo_coda.log" ~data
+  (* let log_to_file data = Out_channel.write_all "/tmp/komodo_coda.log" ~data *)
+  let log_to_file data =
+    Out_channel.with_file ~append:true "/tmp/komodo_coda.log" ~f:(fun outc ->
+        fprintf outc "%s\n" data )
 
   let coda_burn_public_addr =
     Public_key.Compressed.of_base58_check_exn
-      "8QnLSw9fmjRnjsQAy47HfXUuM2vp4CVBXcbguPoqpvfXw42e6zuXgpCSajbPr3V8wc"
+      "8QnLTHMZPbBFezS8j8kDPu6iLiwPsTPyX2vMwcFzjiDZbp6GQDEBEyLbYvzApSdTsE"
 
   let validate_opp_burn sender payload amount receiver =
-    log_to_file @@ "!!!!!!!!!!!!! VALIDATING KOMODO\n" ;
-    if sender = coda_burn_public_addr then (
+    let lol = Public_key.Compressed.to_base58_check sender in
+    let lol2 = Public_key.Compressed.to_base58_check coda_burn_public_addr in
+    log_to_file
+    @@ sprintf "!!!!!!!!!!!!! VALIDATING KOMODO:\n%s\n%s\n" lol lol2 ;
+    if lol = lol2 then (
       let memo = User_command.Payload.memo payload in
-      let tx =
-        Komodo.get_and_validate_tx_sync (User_command_memo.to_string memo)
-      in
+      let memo_str = User_command_memo.data memo in
+      let _ = log_to_file @@ "MEMO??? =>" ^ memo_str in
+      let tx = Komodo.get_and_validate_tx_sync memo_str in
       let coda_amount_int = Amount.to_int amount in
       let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
       match tx with
@@ -470,10 +476,13 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
                    "OPP_BURN: Invalid tx receiver (coda: %s != komodo: %s)"
                    coda_receiver_str receiver' ) )
           else Ok ()
-      | Error _ ->
-          log_to_file @@ "!!!!!!!!!!!! Error validating komodo tx !!!!" ;
+      | Error e ->
+          log_to_file @@ "!!!!!!!!!!!! Error validating komodo tx !!!!"
+          ^ Error.to_string_mach e ;
           Error (Error.of_string "OPP_BURN: Cannot get the komodo tx") )
-    else Ok ()
+    else (
+      log_to_file @@ "!!!!!!!!!!!! NOT A KOMODO TX !!!!" ;
+      Ok () )
 
   (* someday: It would probably be better if we didn't modify the receipt chain hash
      in the case that the sender is equal to the receiver, but it complicates the SNARK, so

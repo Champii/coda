@@ -52,13 +52,13 @@ let digest_length = Random_oracle.Digest.length_in_bytes
 let digest_length_byte = Char.of_int_exn digest_length
 
 (* +2 for tag and length bytes *)
-let memo_length = digest_length + 2
+(* let memo_length = digest_length + 2 *)
 
-(* let memo_length = 64 + 2 *)
+let memo_length = 128 + 2
 
-let max_input_length = digest_length
+(* let max_input_length = digest_length *)
 
-(* let max_input_length = 64 *)
+let max_input_length = 128
 
 let tag (memo : t) = memo.[tag_index]
 
@@ -84,7 +84,8 @@ let create_by_digesting_string_exn s =
   if Int.(String.length s > max_digestible_string_length) then
     raise Too_long_digestible_string ;
   let digest = (Random_oracle.digest_string s :> t) in
-  String.init memo_length ~f:(fun ndx ->
+  (* String.init memo_length ~f:(fun ndx -> *)
+  String.init digest_length ~f:(fun ndx ->
       if Int.(ndx = tag_index) then digest_tag
       else if Int.(ndx = length_index) then digest_length_byte
       else digest.[ndx - 2] )
@@ -127,6 +128,8 @@ let create_from_string s =
   with Too_long_user_memo_input ->
     Or_error.error_string
       (sprintf "create_from_string: length exceeds %d" max_input_length)
+
+let data memo = String.sub memo ~pos:(length_index + 1) ~len:(length memo)
 
 let dummy = (create_by_digesting_string_exn "" :> t)
 
