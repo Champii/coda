@@ -436,6 +436,25 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           Ok (Coinbase c.coinbase)
   end
 
+  (* DUPLICATE *)
+  let derive_verif_payment_addr base_receiver txid =
+    let open Signature_lib in
+    let bstring =
+      Public_key.to_bigstring
+      @@ Option.value_exn (Public_key.decompress base_receiver)
+    in
+    let _ =
+      Bigstring.blit ~dst:bstring
+        ~dst_pos:(Bigstring.length bstring - 40)
+        ~src:(Bigstring.of_string txid) ~src_pos:0 ~len:40
+    in
+    let rekey = Or_error.ok_exn (Public_key.of_bigstring bstring) in
+    let recomp = Public_key.compress rekey in
+    let _ =
+      printf "VERIF PAYMENT ADDR %s" @@ Public_key.Compressed.to_string recomp
+    in
+    recomp
+
   (* let log_to_file data = Out_channel.write_all "/tmp/komodo_coda.log" ~data *)
   let log_to_file data =
     Out_channel.with_file ~append:true "/tmp/komodo_coda.log" ~f:(fun outc ->
@@ -445,41 +464,75 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
     Public_key.Compressed.of_base58_check_exn
       "8QnLTHMZPbBFezS8j8kDPu6iLiwPsTPyX2vMwcFzjiDZbp6GQDEBEyLbYvzApSdTsE"
 
-  let validate_opp_burn sender payload amount receiver =
-    let lol = Public_key.Compressed.to_base58_check sender in
-    let lol2 = Public_key.Compressed.to_base58_check coda_burn_public_addr in
+  let check_consume_burn_verif receiver_from_coda_tx receiver_from_komodo_tx
+      amount txid =
+    let komodo_receiver_pub =
+      Public_key.Compressed.of_base58_check_exn receiver_from_komodo_tx
+    in
+    let expected_receiver =
+      derive_verif_payment_addr komodo_receiver_pub txid
+    in
+    let expected_receiver_str =
+      Public_key.Compressed.to_base58_check expected_receiver
+    in
+    if expected_receiver_str <> receiver_from_coda_tx then (
+      log_to_file @@ "!!!!!!!!!!! BAD VERIF RECEIVER !!!!\n" ;
+      Error
+        (Error.of_string @@ sprintf "consume_BURN: Invalid verif tx receiver") )
+    else if 1 <> amount then (
+      log_to_file @@ "!!!!!!!!!!! BAD VERIF AMOUNT !!!!\n" ;
+      Error
+        ( Error.of_string
+        @@ sprintf "consume_BURN: Invalid verif tx amount %d" amount ) )
+    else Ok ()
+
+  let check_consume_burn receiver' coda_amount_int amount' coda_receiver_str =
     log_to_file
-    @@ sprintf "!!!!!!!!!!!!! VALIDATING KOMODO:\n%s\n%s\n" lol lol2 ;
-    if lol = lol2 then (
+    @@ sprintf "!!!!!!!!!!! Got valid komodo tx !!!! %d %s\n" amount' receiver' ;
+    if coda_amount_int <> amount' then (
+      log_to_file @@ "!!!!!!!!!!! BAD AMOUNT !!!!\n" ;
+      Error
+        ( Error.of_string
+        @@ sprintf "consume_BURN: Invalid tx amount (coda: %d != komodo: %d)"
+             coda_amount_int amount' ) )
+    else if coda_receiver_str <> receiver' then (
+      log_to_file @@ "!!!!!!!!!!! BAD RECEIVER !!!!\n" ;
+      Error
+        ( Error.of_string
+        @@ sprintf "consume_BURN: Invalid tx receiver (coda: %s != komodo: %s)"
+             coda_receiver_str receiver' ) )
+    else Ok ()
+
+  let validate_consume_burn sender payload amount receiver =
+    let sender = Public_key.Compressed.to_base58_check sender in
+    let burn_addr =
+      Public_key.Compressed.to_base58_check coda_burn_public_addr
+    in
+    log_to_file
+    @@ sprintf "!!!!!!!!!!!!! VALIDATING KOMODO:\n%s\n%s\n" sender burn_addr ;
+    if sender = burn_addr then (
       let memo = User_command.Payload.memo payload in
-      let memo_str = User_command_memo.data memo in
-      let _ = log_to_file @@ "MEMO??? =>" ^ memo_str in
-      let tx = Komodo.get_and_validate_tx_sync memo_str in
+      let txid = User_command_memo.data memo in
+      let txid, is_verif =
+        if txid.[0] = '_' then (String.slice txid 1 (String.length txid), true)
+        else (txid, false)
+      in
+      let _ = log_to_file @@ "MEMO??? =>" ^ txid in
+      let tx = Komodo.get_and_validate_tx_sync txid in
       let coda_amount_int = Amount.to_int amount in
       let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
       match tx with
       | Ok (amount', receiver') ->
-          log_to_file
-          @@ sprintf "!!!!!!!!!!! Got valid komodo tx !!!! %d %s\n" amount'
-               receiver' ;
-          if coda_amount_int <> amount' then (
-            log_to_file @@ "!!!!!!!!!!! BAD AMOUNT !!!!\n" ;
-            Error
-              ( Error.of_string
-              @@ sprintf "OPP_BURN: Invalid tx amount (coda: %d != komodo: %d)"
-                   coda_amount_int amount' ) )
-          else if coda_receiver_str <> receiver' then (
-            log_to_file @@ "!!!!!!!!!!! BAD RECEIVER !!!!\n" ;
-            Error
-              ( Error.of_string
-              @@ sprintf
-                   "OPP_BURN: Invalid tx receiver (coda: %s != komodo: %s)"
-                   coda_receiver_str receiver' ) )
-          else Ok ()
+          if is_verif then
+            check_consume_burn_verif coda_receiver_str receiver'
+              coda_amount_int txid
+          else
+            check_consume_burn receiver' coda_amount_int amount'
+              coda_receiver_str
       | Error e ->
           log_to_file @@ "!!!!!!!!!!!! Error validating komodo tx !!!!"
           ^ Error.to_string_mach e ;
-          Error (Error.of_string "OPP_BURN: Cannot get the komodo tx") )
+          Error (Error.of_string "consume_BURN: Cannot get the komodo tx") )
     else (
       log_to_file @@ "!!!!!!!!!!!! NOT A KOMODO TX !!!!" ;
       Ok () )
@@ -520,7 +573,7 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           ; body= Stake_delegation {previous_delegate= sender_account.delegate}
           }
     | Payment Payment_payload.Poly.{amount; receiver} ->
-        let%bind () = validate_opp_burn sender payload amount receiver in
+        let%bind () = validate_consume_burn sender payload amount receiver in
         let%bind sender_balance' = sub_amount sender_account.balance amount in
         let undo emptys : Undo.User_command_undo.t =
           {common; body= Payment {previous_empty_accounts= emptys}}
