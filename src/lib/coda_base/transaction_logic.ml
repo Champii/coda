@@ -464,14 +464,17 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
     Public_key.Compressed.of_base58_check_exn
       "8QnLTHMZPbBFezS8j8kDPu6iLiwPsTPyX2vMwcFzjiDZbp6GQDEBEyLbYvzApSdTsE"
 
-  let check_consume_burn_verif receiver_from_coda_tx receiver_from_komodo_tx
-      amount txid =
-    let komodo_receiver_pub =
-      Public_key.Compressed.of_base58_check_exn receiver_from_komodo_tx
-    in
-    let expected_receiver =
-      derive_verif_payment_addr komodo_receiver_pub txid
-    in
+  let fail_if_already_verif ledger receiver =
+    (* let open Or_error.Let_syntax in *)
+    let account_exists = location_of_key' ledger "" receiver in
+    (* let account_exists = get' ledger "receiver" receiver_location in *)
+    match account_exists with
+    | Ok _ ->
+        Error (Error.of_string @@ sprintf "Consume-burn: Already paid")
+    | Error _ ->
+        Ok ()
+
+  let check_consume_burn_verif receiver_from_coda_tx expected_receiver amount =
     let expected_receiver_str =
       Public_key.Compressed.to_base58_check expected_receiver
     in
@@ -503,7 +506,7 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
              coda_receiver_str receiver' ) )
     else Ok ()
 
-  let validate_consume_burn sender payload amount receiver =
+  let validate_consume_burn ledger sender payload amount receiver =
     let sender = Public_key.Compressed.to_base58_check sender in
     let burn_addr =
       Public_key.Compressed.to_base58_check coda_burn_public_addr
@@ -517,15 +520,26 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
         if txid.[0] = '_' then (String.slice txid 1 (String.length txid), true)
         else (txid, false)
       in
+      let _ =
+        log_to_file @@ sprintf "!!!!!!!!!!! IS VERIF %b !!!!\n" is_verif
+      in
       let _ = log_to_file @@ "MEMO??? =>" ^ txid in
       let tx = Komodo.get_and_validate_tx_sync txid in
       let coda_amount_int = Amount.to_int amount in
       let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
       match tx with
       | Ok (amount', receiver') ->
+          let komodo_receiver_pub =
+            Public_key.Compressed.of_base58_check_exn coda_receiver_str
+          in
+          let expected_receiver =
+            derive_verif_payment_addr komodo_receiver_pub txid
+          in
+          let open Or_error.Let_syntax in
+          let%bind _ = fail_if_already_verif ledger expected_receiver in
           if is_verif then
-            check_consume_burn_verif coda_receiver_str receiver'
-              coda_amount_int txid
+            check_consume_burn_verif coda_receiver_str expected_receiver
+              coda_amount_int
           else
             check_consume_burn receiver' coda_amount_int amount'
               coda_receiver_str
@@ -573,7 +587,9 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           ; body= Stake_delegation {previous_delegate= sender_account.delegate}
           }
     | Payment Payment_payload.Poly.{amount; receiver} ->
-        let%bind () = validate_consume_burn sender payload amount receiver in
+        let%bind () =
+          validate_consume_burn ledger sender payload amount receiver
+        in
         let%bind sender_balance' = sub_amount sender_account.balance amount in
         let undo emptys : Undo.User_command_undo.t =
           {common; body= Payment {previous_empty_accounts= emptys}}
