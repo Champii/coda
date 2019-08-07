@@ -604,7 +604,6 @@ let send_verif_payment coda_dest_addr txid port label error =
   let receiver = derive_verif_payment_addr receiver_orig txid in
   let amount = Currency.Amount.of_int 1 in
   let sender_kp = Genesis_ledger.largest_account_keypair_exn () in
-  (* let open Deferred.Let_syntax in *)
   let%bind nonce = get_nonce_exn sender_kp.public_key port in
   let nonce = Account.Nonce.succ nonce in
   let fee = Option.value ~default:(Currency.Fee.of_int 1) None in

@@ -12,14 +12,7 @@ let credentials =
     , "pass47438fa7ad18431ab4a2a2994983db08fcde31c32528fe6264423087e32de2e2fb"
     )
 
-(* TMP *)
-let log_to_file data =
-  let open Core in
-  Out_channel.with_file ~append:true "/tmp/komodo_coda.error.log"
-    ~f:(fun outc -> fprintf outc "%s\n" data)
-
 let send_rpc message =
-  log_to_file "SEND_RPC" ;
   let open Cohttp in
   let open Cohttp_async in
   let headers = Header.add_authorization (Header.init ()) credentials in
@@ -27,15 +20,11 @@ let send_rpc message =
   let res =
     Client.post ~headers ~body:(Body.of_string data)
       (Uri.of_string daemon_addr_)
-    >>= fun (_, body) -> log_to_file "SEND_RPC_RES" ; body |> Body.to_string
+    >>= fun (_, body) -> body |> Body.to_string
   in
-  log_to_file @@ sprintf "RUN ASYNC %b" @@ Thread_safe.am_holding_async_lock () ;
-  Thread.delay 1.0 ;
-  Thread.yield () ;
   res
 
 let get_raw_tx id =
-  log_to_file "GET_RAW_TX" ;
   let request =
     `Assoc
       [ ("jsonrpc", `String "1.0")
@@ -93,7 +82,6 @@ let get_amount_address tx =
 let validate_burn_addr tx =
   Result.bind (get_amount_address tx)
     ~f:(fun (amount, addr_to, coda_dest_addr) ->
-      log_to_file "GET_AMOUNT_ADDR" ;
       if addr_to = komodo_burn_addr then Ok (amount, coda_dest_addr)
       else
         Error
@@ -113,7 +101,6 @@ let validate_tx tx_str =
   else validate_burn_addr tx
 
 let get_and_validate_tx (txn : string) =
-  log_to_file "GET AND VALIDATE" ;
   let tx_str = get_raw_tx txn in
   Deferred.map tx_str ~f:validate_tx
 

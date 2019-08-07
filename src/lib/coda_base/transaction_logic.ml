@@ -450,24 +450,14 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
     in
     let rekey = Or_error.ok_exn (Public_key.of_bigstring bstring) in
     let recomp = Public_key.compress rekey in
-    let _ =
-      printf "VERIF PAYMENT ADDR %s" @@ Public_key.Compressed.to_string recomp
-    in
     recomp
-
-  (* let log_to_file data = Out_channel.write_all "/tmp/komodo_coda.log" ~data *)
-  let log_to_file data =
-    Out_channel.with_file ~append:true "/tmp/komodo_coda.log" ~f:(fun outc ->
-        fprintf outc "%s\n" data )
 
   let coda_burn_public_addr =
     Public_key.Compressed.of_base58_check_exn
       "8QnLTHMZPbBFezS8j8kDPu6iLiwPsTPyX2vMwcFzjiDZbp6GQDEBEyLbYvzApSdTsE"
 
   let fail_if_already_verif ledger receiver =
-    (* let open Or_error.Let_syntax in *)
     let account_exists = location_of_key' ledger "" receiver in
-    (* let account_exists = get' ledger "receiver" receiver_location in *)
     match account_exists with
     | Ok _ ->
         Error (Error.of_string @@ sprintf "Consume-burn: Already paid")
@@ -478,32 +468,26 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
     let expected_receiver_str =
       Public_key.Compressed.to_base58_check expected_receiver
     in
-    if expected_receiver_str <> receiver_from_coda_tx then (
-      log_to_file @@ "!!!!!!!!!!! BAD VERIF RECEIVER !!!!\n" ;
+    if expected_receiver_str <> receiver_from_coda_tx then
       Error
-        (Error.of_string @@ sprintf "consume_BURN: Invalid verif tx receiver") )
-    else if 1 <> amount then (
-      log_to_file @@ "!!!!!!!!!!! BAD VERIF AMOUNT !!!!\n" ;
+        (Error.of_string @@ sprintf "Consume-burn: Invalid verif tx receiver")
+    else if 1 <> amount then
       Error
         ( Error.of_string
-        @@ sprintf "consume_BURN: Invalid verif tx amount %d" amount ) )
+        @@ sprintf "Consume-burn: Invalid verif tx amount %d" amount )
     else Ok ()
 
   let check_consume_burn receiver' coda_amount_int amount' coda_receiver_str =
-    log_to_file
-    @@ sprintf "!!!!!!!!!!! Got valid komodo tx !!!! %d %s\n" amount' receiver' ;
-    if coda_amount_int <> amount' then (
-      log_to_file @@ "!!!!!!!!!!! BAD AMOUNT !!!!\n" ;
+    if coda_amount_int <> amount' then
       Error
         ( Error.of_string
-        @@ sprintf "consume_BURN: Invalid tx amount (coda: %d != komodo: %d)"
-             coda_amount_int amount' ) )
-    else if coda_receiver_str <> receiver' then (
-      log_to_file @@ "!!!!!!!!!!! BAD RECEIVER !!!!\n" ;
+        @@ sprintf "Consume-burn: Invalid tx amount (coda: %d != komodo: %d)"
+             coda_amount_int amount' )
+    else if coda_receiver_str <> receiver' then
       Error
         ( Error.of_string
-        @@ sprintf "consume_BURN: Invalid tx receiver (coda: %s != komodo: %s)"
-             coda_receiver_str receiver' ) )
+        @@ sprintf "Consume-burn: Invalid tx receiver (coda: %s != komodo: %s)"
+             coda_receiver_str receiver' )
     else Ok ()
 
   let validate_consume_burn ledger sender payload amount receiver =
@@ -511,19 +495,13 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
     let burn_addr =
       Public_key.Compressed.to_base58_check coda_burn_public_addr
     in
-    log_to_file
-    @@ sprintf "!!!!!!!!!!!!! VALIDATING KOMODO:\n%s\n%s\n" sender burn_addr ;
-    if sender = burn_addr then (
+    if sender = burn_addr then
       let memo = User_command.Payload.memo payload in
       let txid = User_command_memo.data memo in
       let txid, is_verif =
         if txid.[0] = '_' then (String.slice txid 1 (String.length txid), true)
         else (txid, false)
       in
-      let _ =
-        log_to_file @@ sprintf "!!!!!!!!!!! IS VERIF %b !!!!\n" is_verif
-      in
-      let _ = log_to_file @@ "MEMO??? =>" ^ txid in
       let tx = Komodo.get_and_validate_tx_sync txid in
       let coda_amount_int = Amount.to_int amount in
       let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
@@ -543,13 +521,9 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           else
             check_consume_burn receiver' coda_amount_int amount'
               coda_receiver_str
-      | Error e ->
-          log_to_file @@ "!!!!!!!!!!!! Error validating komodo tx !!!!"
-          ^ Error.to_string_mach e ;
-          Error (Error.of_string "consume_BURN: Cannot get the komodo tx") )
-    else (
-      log_to_file @@ "!!!!!!!!!!!! NOT A KOMODO TX !!!!" ;
-      Ok () )
+      | Error _ ->
+          Error (Error.of_string "Consume-burn: Cannot get the komodo tx")
+    else Ok ()
 
   (* someday: It would probably be better if we didn't modify the receipt chain hash
      in the case that the sender is equal to the receiver, but it complicates the SNARK, so
