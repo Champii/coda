@@ -89,7 +89,6 @@ type DaemonStatus {
   blockchainLength: Int
   uptimeSecs: Int!
   ledgerMerkleRoot: String
-  stagedLedgerHash: String
   stateHash: String
   commitId: String!
   confDir: String!
@@ -227,6 +226,12 @@ type query {
     # Public key of sender of pooled user commands
     publicKey: PublicKey!
   ): [UserCommand!]!
+
+  # Get the status of a transaction
+  transactionStatus(
+    # Id of a UserCommand
+    payment: ID!
+  ): TransactionStatus!
 }
 
 type RpcPair {
@@ -242,6 +247,9 @@ type RpcTimings {
 }
 
 input SendDelegationInput {
+  # Desired nonce for delegating state
+  nonce: UInt32
+
   # Short arbitrary message provided by the sender
   memo: String
 
@@ -261,6 +269,9 @@ type SendDelegationPayload {
 }
 
 input SendPaymentInput {
+  # Desired nonce for sending a payment
+  nonce: UInt32
+
   # Short arbitrary message provided by the sender
   memo: String
 
@@ -317,6 +328,8 @@ enum SyncStatus {
   BOOTSTRAP
   SYNCED
   OFFLINE
+  CONNECTING
+  LISTENING
 }
 
 # Different types of transactions in a block
@@ -330,6 +343,21 @@ type Transactions {
   # Amount of coda granted to the producer of this block
   coinbase: UInt64!
 }
+
+# Status of a transaction
+enum TransactionStatus {
+  # A transaction that is on the longest chain
+  INCLUDED
+
+  # A transaction either in the transition frontier or in transaction pool but is not on the longest chain
+  PENDING
+
+  # The transaction has either been snarked, reached finality through consensus or has been dropped
+  UNKNOWN
+}
+
+# String representing a uint32 number in base 10
+scalar UInt32
 
 # String representing a uint64 number in base 10
 scalar UInt64
@@ -386,4 +414,3 @@ type Wallet {
   # Path of the private key file for this account
   privateKeyPath: String!
 }
-
