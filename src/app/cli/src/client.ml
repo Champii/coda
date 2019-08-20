@@ -554,7 +554,10 @@ let user_command_second
            Secrets.Keypair.Terminal_stdin.read_exn_second ~path:from_account
              ~password
          in
-         let%bind nonce = get_nonce_exn sender_kp.public_key port in
+         let%bind nonce =
+           get_nonce_exn ~rpc:Daemon_rpcs.Get_inferred_nonce.rpc
+             sender_kp.public_key port
+         in
          let fee = Option.value ~default:(Currency.Fee.of_int 1) fee in
          let memo1 = User_command_memo.create_from_string_exn komodo_address in
          let payload : User_command.Payload.t =
@@ -564,13 +567,12 @@ let user_command_second
          dispatch_with_message Daemon_rpcs.Send_user_command.rpc
            (payment :> User_command.t)
            port
-           ~success:
-             (Or_error.map ~f:(fun receipt_chain_hash ->
-                  sprintf
-                    "Successfully enqueued %s in pool\nReceipt_chain_hash: %s"
-                    label
-                    (Receipt.Chain_hash.to_string receipt_chain_hash) ))
-           ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e)) ))
+           ~success:(fun receipt_chain_hash ->
+             sprintf "Successfully enqueued %s in pool\nReceipt_chain_hash: %s"
+               label
+               (Receipt.Chain_hash.to_string receipt_chain_hash) )
+           ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e))
+           ~join_error:Or_error.join ))
 
 let send_payment =
   let body =
@@ -597,7 +599,7 @@ let burn =
       flag "amount" ~doc:"VALUE Payment amount you want to burn"
         (required txn_amount)
       (* and wallet_password = flag "wallet-password" ~doc:"Password to the sender wallet."
-                                                                                                                                                                                                                                                                     (required string) *)
+                                                                                                                                                                                                                                                                           (required string) *)
     in
     (* TODO: Use config system to store this *)
     let receiver =
@@ -622,7 +624,7 @@ let internal_get_komodo_tx port txid =
 let fail_if_already_verif pubkey port =
   let open Deferred.Let_syntax in
   match%map dispatch Daemon_rpcs.Get_balance.rpc pubkey port with
-  | Ok (Some _) ->
+  | Ok (Ok (Some _)) ->
       Error (Error.of_string "Already paid")
   | _ ->
       Ok ()
@@ -653,7 +655,10 @@ let send_consume_burn_payment coda_dest_addr amount' txid port label error =
   | Ok _ ->
       let amount = Currency.Amount.of_int amount' in
       let sender_kp = Genesis_ledger.largest_account_keypair_exn () in
-      let%bind nonce = get_nonce_exn sender_kp.public_key port in
+      let%bind nonce =
+        get_nonce_exn ~rpc:Daemon_rpcs.Get_inferred_nonce.rpc
+          sender_kp.public_key port
+      in
       let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
       let memo1 = User_command_memo.create_from_string_exn txid in
       let body = User_command_payload.Body.Payment {receiver; amount} in
@@ -664,11 +669,11 @@ let send_consume_burn_payment coda_dest_addr amount' txid port label error =
       dispatch_with_message Daemon_rpcs.Send_user_command.rpc
         (payment :> User_command.t)
         port
-        ~success:
-          (Or_error.map ~f:(fun receipt_chain_hash ->
-               sprintf "Initiated %s\nReceipt chain hash: %s" label
-                 (Receipt.Chain_hash.to_string receipt_chain_hash) ))
+        ~success:(fun receipt_chain_hash ->
+          sprintf "Initiated %s\nReceipt chain hash: %s" label
+            (Receipt.Chain_hash.to_string receipt_chain_hash) )
         ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e))
+        ~join_error:Or_error.join
 
 let send_verif_payment coda_dest_addr txid port label error =
   let receiver_orig =
@@ -677,7 +682,10 @@ let send_verif_payment coda_dest_addr txid port label error =
   let receiver = derive_verif_payment_addr receiver_orig txid in
   let amount = Currency.Amount.of_int 1 in
   let sender_kp = Genesis_ledger.largest_account_keypair_exn () in
-  let%bind nonce = get_nonce_exn sender_kp.public_key port in
+  let%bind nonce =
+    get_nonce_exn ~rpc:Daemon_rpcs.Get_inferred_nonce.rpc sender_kp.public_key
+      port
+  in
   let nonce = Account.Nonce.succ nonce in
   let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
   let memo1 = User_command_memo.create_from_string_exn ("_" ^ txid) in
@@ -689,11 +697,11 @@ let send_verif_payment coda_dest_addr txid port label error =
   dispatch_with_message Daemon_rpcs.Send_user_command.rpc
     (payment :> User_command.t)
     port
-    ~success:
-      (Or_error.map ~f:(fun receipt_chain_hash ->
-           sprintf "Initiated %s\nReceipt chain hash: %s" label
-             (Receipt.Chain_hash.to_string receipt_chain_hash) ))
+    ~success:(fun receipt_chain_hash ->
+      sprintf "Initiated %s\nReceipt chain hash: %s" label
+        (Receipt.Chain_hash.to_string receipt_chain_hash) )
     ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e))
+    ~join_error:Or_error.join
 
 let user_command_consume_burn (body_args : string Command.Param.t) ~label
     ~summary ~error =
