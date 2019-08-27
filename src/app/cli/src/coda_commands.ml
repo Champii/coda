@@ -134,6 +134,11 @@ let get_nonce t (addr : Public_key.Compressed.t) =
   let%map account = get_account t addr in
   account.Account.Poly.nonce
 
+let get_next_receipt t (addr : Public_key.Compressed.t) payload =
+  let open Participating_state.Option.Let_syntax in
+  let%map account = get_account t addr in
+  Receipt.Chain_hash.cons payload account.Account.Poly.receipt_chain_hash
+
 let send_user_command t (txn : User_command.t) =
   Deferred.return
   @@
@@ -177,7 +182,7 @@ let replace_proposers keys pks =
     (Keypair.And_compressed_pk.Set.of_list kps) ;
   kps |> List.map ~f:snd
 
-let get_komodo_tx (txn : string) = Komodo.get_and_validate_tx txn
+(* let get_komodo_tx (txn : string) = Komodo.get_and_validate_tx txn *)
 
 let setup_user_command ~fee ~nonce ~memo ~sender_kp user_command_body =
   let payload =

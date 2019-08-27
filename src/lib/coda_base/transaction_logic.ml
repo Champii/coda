@@ -436,61 +436,40 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           Ok (Coinbase c.coinbase)
   end
 
-  (* DUPLICATE *)
-  let derive_verif_payment_addr base_receiver txid =
-    let open Signature_lib in
-    let bstring =
-      Public_key.to_bigstring
-      @@ Option.value_exn (Public_key.decompress base_receiver)
-    in
-    let _ =
-      Bigstring.blit ~dst:bstring
-        ~dst_pos:(Bigstring.length bstring - 40)
-        ~src:(Bigstring.of_string txid) ~src_pos:0 ~len:40
-    in
-    let rekey = Or_error.ok_exn (Public_key.of_bigstring bstring) in
-    let recomp = Public_key.compress rekey in
-    recomp
+  (* DUPLICATE
+     let derive_verif_payment_addr base_receiver txid =
+     let open Signature_lib in
+     let bstring =
+     Public_key.to_bigstring
+     @@ Option.value_exn (Public_key.decompress base_receiver)
+     in
+     let _ =
+     Bigstring.blit ~dst:bstring
+      ~dst_pos:(Bigstring.length bstring - 40)
+      ~src:(Bigstring.of_string txid) ~src_pos:0 ~len:40
+     in
+     let rekey = Or_error.ok_exn (Public_key.of_bigstring bstring) in
+     let recomp = Public_key.compress rekey in
+     recomp *)
 
   let coda_burn_public_addr =
     Public_key.Compressed.of_base58_check_exn
       "8QnLTHMZPbBFezS8j8kDPu6iLiwPsTPyX2vMwcFzjiDZbp6GQDEBEyLbYvzApSdTsE"
 
-  let fail_if_already_verif ledger receiver =
-    let account_exists = location_of_key' ledger "" receiver in
-    match account_exists with
-    | Ok _ ->
-        Error (Error.of_string @@ sprintf "Consume-burn: Already paid")
-    | Error _ ->
-        Ok ()
-
-  let check_consume_burn_verif receiver_from_coda_tx expected_receiver amount =
-    let expected_receiver_str =
-      Public_key.Compressed.to_base58_check expected_receiver
-    in
-    if expected_receiver_str <> receiver_from_coda_tx then
-      Error
-        (Error.of_string @@ sprintf "Consume-burn: Invalid verif tx receiver")
-    else if 1 <> amount then
-      Error
-        ( Error.of_string
-        @@ sprintf "Consume-burn: Invalid verif tx amount %d" amount )
-    else Ok ()
-
   let check_consume_burn receiver' coda_amount_int amount' coda_receiver_str =
     if coda_amount_int <> amount' then
       Error
         ( Error.of_string
-        @@ sprintf "Consume-burn: Invalid tx amount (coda: %d != komodo: %d)"
+        @@ sprintf "Claim-burn: Invalid tx amount (coda: %d != komodo: %d)"
              coda_amount_int amount' )
     else if coda_receiver_str <> receiver' then
       Error
         ( Error.of_string
-        @@ sprintf "Consume-burn: Invalid tx receiver (coda: %s != komodo: %s)"
+        @@ sprintf "Claim-burn: Invalid tx receiver (coda: %s != komodo: %s)"
              coda_receiver_str receiver' )
     else Ok ()
 
-  let validate_consume_burn ledger sender payload amount receiver =
+  let validate_consume_burn sender payload amount receiver receipt =
     let sender = Public_key.Compressed.to_base58_check sender in
     let burn_addr =
       Public_key.Compressed.to_base58_check coda_burn_public_addr
@@ -498,31 +477,20 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
     if sender = burn_addr then
       let memo = User_command.Payload.memo payload in
       let txid = User_command_memo.data memo in
-      let txid, is_verif =
-        if txid.[0] = '_' then (String.slice txid 1 (String.length txid), true)
-        else (txid, false)
-      in
-      let tx = Komodo.get_and_validate_tx_sync txid in
+      let komodo_tx = Komodo.get_and_validate_tx_sync txid in
       let coda_amount_int = Amount.to_int amount in
       let coda_receiver_str = Public_key.Compressed.to_base58_check receiver in
-      match tx with
-      | Ok (amount', receiver') ->
-          let komodo_receiver_pub =
-            Public_key.Compressed.of_base58_check_exn coda_receiver_str
+      match komodo_tx with
+      | Ok (amount', receiver', komodo_sender) ->
+          let marker_exists =
+            Komodo.validate_marker_exists komodo_sender receipt txid
           in
-          let expected_receiver =
-            derive_verif_payment_addr komodo_receiver_pub txid
-          in
-          let open Or_error.Let_syntax in
-          let%bind _ = fail_if_already_verif ledger expected_receiver in
-          if is_verif then
-            check_consume_burn_verif coda_receiver_str expected_receiver
-              coda_amount_int
-          else
+          if marker_exists then
             check_consume_burn receiver' coda_amount_int amount'
               coda_receiver_str
+          else Error (Error.of_string "Claim-burn: Marker does not exists")
       | Error _ ->
-          Error (Error.of_string "Consume-burn: Cannot get the komodo tx")
+          Error (Error.of_string "Claim-burn: Cannot get the komodo tx")
     else Ok ()
 
   (* someday: It would probably be better if we didn't modify the receipt chain hash
@@ -562,7 +530,8 @@ module Make (L : Ledger_intf) : S with type ledger := L.t = struct
           }
     | Payment Payment_payload.Poly.{amount; receiver} ->
         let%bind () =
-          validate_consume_burn ledger sender payload amount receiver
+          validate_consume_burn sender payload amount receiver
+            (Receipt.Chain_hash.to_string sender_account.receipt_chain_hash)
         in
         let%bind sender_balance' = sub_amount sender_account.balance amount in
         let undo emptys : Undo.User_command_undo.t =

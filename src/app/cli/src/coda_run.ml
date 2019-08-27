@@ -223,8 +223,8 @@ let setup_local_server ?(client_whitelist = []) ?rest_server_port
           return
             ( Coda_commands.schedule_user_commands coda ts
             |> Participating_state.active_error ) )
-    ; implement Daemon_rpcs.Get_komodo_tx.rpc (fun () tx ->
-          Coda_commands.get_komodo_tx tx )
+      (* ; implement Daemon_rpcs.Get_komodo_tx.rpc (fun () tx ->
+       Coda_commands.get_komodo_tx tx ) *)
     ; implement Daemon_rpcs.Get_balance.rpc (fun () pk ->
           return
             ( Coda_commands.get_balance coda pk
@@ -268,6 +268,10 @@ let setup_local_server ?(client_whitelist = []) ?rest_server_port
     ; implement Daemon_rpcs.Get_nonce.rpc (fun () pk ->
           return
             ( Coda_commands.get_nonce coda pk
+            |> Participating_state.active_error ) )
+    ; implement Daemon_rpcs.Get_next_receipt.rpc (fun () (pk, payload) ->
+          return
+            ( Coda_commands.get_next_receipt coda pk payload
             |> Participating_state.active_error ) )
     ; implement Daemon_rpcs.Get_inferred_nonce.rpc (fun () pk ->
           return

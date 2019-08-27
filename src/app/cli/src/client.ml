@@ -591,6 +591,10 @@ let send_payment =
   user_command body ~label:"payment" ~summary:"Send payment to an address"
     ~error:"Failed to send payment"
 
+let burn_addr_key = Genesis_ledger.largest_account_keypair_exn ()
+
+let burn_addr_pubkey = Public_key.compress burn_addr_key.public_key
+
 let burn =
   let body =
     let open Command.Let_syntax in
@@ -599,141 +603,108 @@ let burn =
       flag "amount" ~doc:"VALUE Payment amount you want to burn"
         (required txn_amount)
       (* and wallet_password = flag "wallet-password" ~doc:"Password to the sender wallet."
-                                                                                                                                                                                                                                                                           (required string) *)
+                                                                                                                                                                                                                                                                                                                                                                       (required string) *)
     in
     (* TODO: Use config system to store this *)
-    let receiver =
-      Public_key.Compressed.of_base58_check_exn
-        "8QnLSw9fmjRnjsQAy47HfXUuM2vp4CVBXcbguPoqpvfXw42e6zuXgpCSajbPr3V8wc"
-    in
+    let receiver = burn_addr_pubkey in
     User_command_payload.Body.Payment {receiver; amount}
   in
   user_command_second body ~label:"burn" ~summary:"Burn specific amount"
     ~error:"Failed to burn"
 
-let internal_get_komodo_tx port txid =
-  let open Deferred.Let_syntax in
-  match%map dispatch Daemon_rpcs.Get_komodo_tx.rpc txid port with
-  | Ok (Ok (amount, coda_dest_addr)) ->
-      Ok (amount, coda_dest_addr)
-  | Ok (Error e) ->
-      Error (Error.to_string_hum e)
-  | Error e ->
-      Error (Error.to_string_hum e)
-
-let fail_if_already_verif pubkey port =
-  let open Deferred.Let_syntax in
-  match%map dispatch Daemon_rpcs.Get_balance.rpc pubkey port with
-  | Ok (Ok (Some _)) ->
-      Error (Error.of_string "Already paid")
-  | _ ->
-      Ok ()
-
-let derive_verif_payment_addr base_receiver txid =
-  let open Signature_lib in
-  let bstring =
-    Public_key.to_bigstring
-    @@ Option.value_exn (Public_key.decompress base_receiver)
-  in
-  let _ =
-    Bigstring.blit ~dst:bstring
-      ~dst_pos:(Bigstring.length bstring - 40)
-      ~src:(Bigstring.of_string txid) ~src_pos:0 ~len:40
-  in
-  let rekey = Or_error.ok_exn (Public_key.of_bigstring bstring) in
-  let recomp = Public_key.compress rekey in
-  recomp
-
-let send_consume_burn_payment coda_dest_addr amount' txid port label error =
+let make_claim_burn_payload coda_dest_addr amount' txid port =
   let receiver = Public_key.Compressed.of_base58_check_exn coda_dest_addr in
-  let receiver_derived = derive_verif_payment_addr receiver txid in
-  let open Deferred.Let_syntax in
-  let%bind res_fail = fail_if_already_verif receiver_derived port in
-  match res_fail with
-  | Error _ ->
-      Deferred.unit
-  | Ok _ ->
-      let amount = Currency.Amount.of_int amount' in
-      let sender_kp = Genesis_ledger.largest_account_keypair_exn () in
-      let%bind nonce =
-        get_nonce_exn ~rpc:Daemon_rpcs.Get_inferred_nonce.rpc
-          sender_kp.public_key port
-      in
-      let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
-      let memo1 = User_command_memo.create_from_string_exn txid in
-      let body = User_command_payload.Body.Payment {receiver; amount} in
-      let payload : User_command.Payload.t =
-        User_command.Payload.create ~fee ~nonce ~memo:memo1 ~body
-      in
-      let payment = User_command.sign sender_kp payload in
-      dispatch_with_message Daemon_rpcs.Send_user_command.rpc
-        (payment :> User_command.t)
-        port
-        ~success:(fun receipt_chain_hash ->
-          sprintf "Initiated %s\nReceipt chain hash: %s" label
-            (Receipt.Chain_hash.to_string receipt_chain_hash) )
-        ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e))
-        ~join_error:Or_error.join
-
-let send_verif_payment coda_dest_addr txid port label error =
-  let receiver_orig =
-    Public_key.Compressed.of_base58_check_exn coda_dest_addr
-  in
-  let receiver = derive_verif_payment_addr receiver_orig txid in
-  let amount = Currency.Amount.of_int 1 in
-  let sender_kp = Genesis_ledger.largest_account_keypair_exn () in
-  let%bind nonce =
+  let amount = Currency.Amount.of_int amount' in
+  let sender_kp = burn_addr_key in
+  let%map nonce =
     get_nonce_exn ~rpc:Daemon_rpcs.Get_inferred_nonce.rpc sender_kp.public_key
       port
   in
-  let nonce = Account.Nonce.succ nonce in
   let fee = Option.value ~default:(Currency.Fee.of_int 1) None in
-  let memo1 = User_command_memo.create_from_string_exn ("_" ^ txid) in
+  let memo1 = User_command_memo.create_from_string_exn txid in
   let body = User_command_payload.Body.Payment {receiver; amount} in
   let payload : User_command.Payload.t =
     User_command.Payload.create ~fee ~nonce ~memo:memo1 ~body
   in
-  let payment = User_command.sign sender_kp payload in
-  dispatch_with_message Daemon_rpcs.Send_user_command.rpc
-    (payment :> User_command.t)
-    port
-    ~success:(fun receipt_chain_hash ->
-      sprintf "Initiated %s\nReceipt chain hash: %s" label
-        (Receipt.Chain_hash.to_string receipt_chain_hash) )
-    ~error:(fun e -> sprintf "%s: %s" error (Error.to_string_hum e))
-    ~join_error:Or_error.join
+  payload
 
-let user_command_consume_burn (body_args : string Command.Param.t) ~label
+(* User_command.sign sender_kp payload *)
+
+let send_claim_burn_payment payment port =
+  let payment = User_command.sign burn_addr_key payment in
+  dispatch Daemon_rpcs.Send_user_command.rpc (payment :> User_command.t) port
+  >>| fun x ->
+  match x with
+  | Error e ->
+      Error e
+  | Ok (Error e) ->
+      Error e
+  | Ok (Ok receipt) ->
+      Ok (Receipt.Chain_hash.to_string receipt)
+
+let get_next_receipt payload port =
+  (* let payment = User_command.sign burn_addr_key payload in *)
+  dispatch Daemon_rpcs.Get_next_receipt.rpc (burn_addr_pubkey, payload) port
+  >>| fun x ->
+  match x with
+  | Error e ->
+      Error e
+  | Ok (Error e) ->
+      Error e
+  | Ok (Ok (Some receipt)) ->
+      Ok (Receipt.Chain_hash.to_string receipt)
+  | Ok (Ok None) ->
+      Error (Error.of_string "Cannot get next receipt")
+
+let user_command_claim_burn (body_args : string Command.Param.t) ~_label
     ~summary ~error =
   Command.async ~summary
     (Cli_lib.Background_daemon.init body_args ~f:(fun port txid ->
-         let open Deferred.Let_syntax in
-         let%bind komodo_res = internal_get_komodo_tx port txid in
+         let komodo_res = Komodo.get_and_validate_tx_sync txid in
          match komodo_res with
          | Error e ->
-             printf "%s: %s" error e ; Deferred.unit
-         | Ok (amount', coda_dest_addr) -> (
-             let receiver =
-               Public_key.Compressed.of_base58_check_exn coda_dest_addr
-             in
-             let receiver_derived = derive_verif_payment_addr receiver txid in
+             printf "%s: %s" error @@ Error.to_string_hum e ;
+             Deferred.unit
+         | Ok (amount', coda_dest_addr, komodo_sender_addr) -> (
              let open Deferred.Let_syntax in
-             let%bind res_fail = fail_if_already_verif receiver_derived port in
-             match res_fail with
-             | Error _ ->
-                 printf "Consume-burn: Already consumed\n" ;
-                 Deferred.unit
-             | Ok _ ->
-                 let open Deferred.Let_syntax in
-                 let%bind () =
-                   send_consume_burn_payment coda_dest_addr amount' txid port
-                     label error
+             let%bind payload =
+               make_claim_burn_payload coda_dest_addr amount' txid port
+             in
+             let%bind receipt = get_next_receipt payload port in
+             match receipt with
+             | Ok receipt -> (
+                 let res_fail =
+                   Komodo.fail_if_already_claimed komodo_sender_addr receipt
+                     txid
                  in
-                 send_verif_payment coda_dest_addr txid port label error ) ))
+                 match res_fail with
+                 | Error _ ->
+                     printf "Claim-burn: Already claimed\n" ;
+                     Deferred.unit
+                 | Ok _ -> (
+                     let open Deferred.Let_syntax in
+                     let%bind receipt_res =
+                       send_claim_burn_payment payload port
+                     in
+                     match receipt_res with
+                     | Ok receipt -> (
+                       match
+                         Komodo.send_validation_payment komodo_sender_addr txid
+                       with
+                       | Ok _ ->
+                           printf "Claim-burn: Receipt: %s\n" receipt ;
+                           Deferred.unit
+                       | Error _ ->
+                           printf "Claim-burn: Error sending marker payment\n" ;
+                           Deferred.unit )
+                     | Error e ->
+                         printf "Claim-burn: Error %s\n"
+                         @@ Error.to_string_hum e ;
+                         Deferred.unit ) )
+             | Error _ ->
+                 Deferred.unit ) ))
 
-(* return () )) *)
-
-let consume_burn =
+let claim_burn =
   let body =
     let open Command.Let_syntax in
     let%map_open txid =
@@ -741,9 +712,9 @@ let consume_burn =
     in
     txid
   in
-  user_command_consume_burn body ~label:"consume-burn"
-    ~summary:"Consume komodo burn transaction to generate funds"
-    ~error:"Failed to consume komodo transaction"
+  user_command_claim_burn body ~_label:"Claim-burn"
+    ~summary:"Claim komodo burn transaction to generate funds"
+    ~error:"Failed to claim komodo transaction"
 
 let get_transaction_status =
   Command.async ~summary:"Get the status of a transaction"
@@ -971,14 +942,15 @@ end
 let command =
   Command.group ~summary:"Lightweight client commands"
     ~preserve_subcommand_order:()
-    [ ("consume-burn", consume_burn)
-    ; ("get-balance", get_balance)
+    [ ("get-balance", get_balance)
     ; ("send-payment", send_payment)
     ; ("generate-keypair", generate_keypair)
     ; ("delegate-stake", delegate_stake)
     ; ("set-staking", set_staking)
     ; ("generate-receipt", generate_receipt)
     ; ("verify-receipt", verify_receipt)
+    ; ("claim-burn", claim_burn)
+    ; ("burn", burn)
     ; ("stop-daemon", stop_daemon)
     ; ("status", status) ]
 

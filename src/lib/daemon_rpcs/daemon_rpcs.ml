@@ -291,16 +291,16 @@ module Types = struct
   end
 end
 
-module Get_komodo_tx = struct
-  type query = string [@@deriving bin_io]
+(* module Get_komodo_tx = struct
+   type query = string [@@deriving bin_io]
 
-  type response = (int * string) Or_error.t [@@deriving bin_io]
+   type response = (int * string) Or_error.t [@@deriving bin_io]
 
-  type error = unit [@@deriving bin_io]
+   type error = unit [@@deriving bin_io]
 
-  let rpc : (query, response) Rpc.Rpc.t =
+   let rpc : (query, response) Rpc.Rpc.t =
     Rpc.Rpc.create ~name:"Get_komodo_tx" ~version:0 ~bin_query ~bin_response
-end
+   end *)
 
 module Send_user_command = struct
   type query = User_command.Stable.Latest.t [@@deriving bin_io]
@@ -452,6 +452,21 @@ module Get_nonce = struct
 
   let rpc : (query, response) Rpc.Rpc.t =
     Rpc.Rpc.create ~name:"Get_nonce" ~version:0 ~bin_query ~bin_response
+end
+
+module Get_next_receipt = struct
+  type query =
+    Public_key.Compressed.Stable.Latest.t
+    * User_command_payload.Stable.Latest.t
+  [@@deriving bin_io]
+
+  type response = Receipt.Chain_hash.Stable.Latest.t option Or_error.t
+  [@@deriving bin_io]
+
+  type error = unit [@@deriving bin_io]
+
+  let rpc : (query, response) Rpc.Rpc.t =
+    Rpc.Rpc.create ~name:"Get_next_receipt" ~version:0 ~bin_query ~bin_response
 end
 
 module Get_status = struct
